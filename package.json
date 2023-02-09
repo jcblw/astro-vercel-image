@@ -1,6 +1,13 @@
 {
   "name": "astro-vercel-image",
   "description": "A way to leverage Vercel's Image Optimization API in Astro",
+  "author": "Jacob Lowe",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:jcblw/astro-vercel-image.git"
+  },
+  "homepage": "https://github.com/jcblw/astro-vercel-image",
   "version": "1.0.0",
   "type": "module",
   "exports": {
