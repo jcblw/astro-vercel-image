@@ -1,0 +1,29 @@
+{
+  "name": "astro-vercel-image",
+  "description": "A way to leverage Vercel's Image Optimization API in Astro",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./VercelImage.astro": "./VercelImage.astro"
+  },
+  "files": [
+    "src",
+    "index.ts",
+    "VercelImage.astro"
+  ],
+  "keywords": [
+    "withastro",
+    "astro-integration",
+    "astro",
+    "vercel"
+  ],
+  "scripts": {},
+  "devDependencies": {
+    "@types/node": "^18.13.0",
+    "astro": "^2.0.9"
+  },
+  "peerDependencies": {
+    "astro": "^2.0.0-beta.0"
+  }
+}
