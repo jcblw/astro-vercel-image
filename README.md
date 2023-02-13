@@ -1,6 +1,6 @@
 # Vercel Image Optimization for Astro
 
-This is an integration for [Astro](https://astro.build) that adds support for [Vercel Image Optimization](https://vercel.com/docs/next.js/image-optimization). **Note:** This integration currently does not support using the Vercel Adapter, to do that please referance the [Vercel Image Optimization](https://jcbl.ws/astro-vercel-image-optimization) documentation for more info.
+This is an integration for [Astro](https://astro.build) that adds support for [Vercel Image Optimization](https://vercel.com/docs/next.js/image-optimization). **Note:** This integration currently does not support using the Vercel Adapter, to do that please referance the [Vercel Image Optimization blog](https://jcbl.ws/astro-vercel-image-optimization) for more info.
 
 ## Installation
 
