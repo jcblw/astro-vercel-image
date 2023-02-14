@@ -23,7 +23,11 @@
     "withastro",
     "astro-integration",
     "astro",
-    "vercel"
+    "vercel",
+    "image",
+    "seo",
+    "image-optimization",
+    "performance"
   ],
   "scripts": {},
   "devDependencies": {
