@@ -1,70 +1,130 @@
-import type { AstroIntegration } from "astro";
-import fs from "fs/promises";
-import path from "path";
+import type { AstroIntegration } from 'astro'
+import fs from 'fs/promises'
+import path from 'path'
 
-type ImageFormat = "image/avif" | "image/webp";
+const name = '@jcblw/astro-site-presets'
+
+type ImageFormat = 'image/avif' | 'image/webp'
 
 type RemotePattern = {
-  protocol?: "http" | "https";
-  hostname: string;
-  port?: string;
-  pathname?: string;
-};
-
-interface AstroVercelImagesConfig {
-  sizes: number[];
-  domains: string[];
-  remotePatterns?: RemotePattern[];
-  minimumCacheTTL?: number; // seconds
-  formats?: ImageFormat[];
-  dangerouslyAllowSVG?: boolean;
-  contentSecurityPolicy?: string;
+  protocol?: 'http' | 'https'
+  hostname: string
+  port?: string
+  pathname?: string
 }
 
-export const getVercelOutput = (root: URL) =>
-  new URL("./.vercel/output/", root);
+interface AstroVercelImagesConfig {
+  sizes: number[]
+  domains: string[]
+  remotePatterns?: RemotePattern[]
+  minimumCacheTTL?: number // seconds
+  formats?: ImageFormat[]
+  dangerouslyAllowSVG?: boolean
+  contentSecurityPolicy?: string
+  middleware?: string
+}
+
+export const getVercelOutput = (root: URL) => new URL('./.vercel/output/', root)
 
 export default function createIntegration(
-  config: AstroVercelImagesConfig = {
+  {
+    middleware: middlewareFile,
+    ...integrationConfig
+  }: AstroVercelImagesConfig = {
     sizes: [640, 750, 828, 1080, 1200],
     domains: [],
   }
 ): AstroIntegration {
-  const directory = path.join(process.cwd(), "./.vercel/output");
+  const directory = path.join(process.cwd(), './.vercel/output')
+  let hasMiddleware = false
+  let middlewarePath: URL | null = null
   return {
-    name: "astro-vercel-image",
+    name,
     hooks: {
-      "astro:config:setup": async ({ config, updateConfig }) => {
-        if (config.output !== "static") {
-          throw new Error("This integration only works with static builds");
+      'astro:config:setup': async ({ config, updateConfig }) => {
+        if (config.output !== 'static') {
+          throw new Error('This integration only works with static builds')
         }
-        const outDir = new URL("./static/", getVercelOutput(config.root));
+
+        if (middlewareFile && middlewareFile.includes('.ts')) {
+          throw new Error('Typescript middleware is not supported')
+        }
+
+        if (middlewareFile) {
+          middlewarePath = new URL(middlewareFile, config.srcDir)
+          try {
+            await fs.stat(middlewarePath)
+            hasMiddleware = true
+          } catch (e) {
+            console.warn(e)
+          }
+        }
+
+        const outDir = new URL('./static/', getVercelOutput(config.root))
         updateConfig({
+          // ...config,
           build: {
             ...config.build,
-            format: "directory",
+            format: 'directory',
           },
           outDir,
-        });
+        })
       },
-      "astro:build:done": async () => {
-        let existingConfig: { images?: AstroVercelImagesConfig } = {};
-        const configPath = path.resolve(directory, "./config.json");
+      'astro:build:done': async () => {
+        let existingConfig: { images?: AstroVercelImagesConfig } = {}
+        const configPath = path.resolve(directory, './config.json')
         try {
-          existingConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
+          existingConfig = JSON.parse(await fs.readFile(configPath, 'utf8'))
         } catch (e) {
-          // console.log(e);
+          console.warn(e)
         }
+
         const newConfig = {
           version: 3,
-          routes: [{ handle: "filesystem" }],
+          routes: [{ handle: 'filesystem' }],
           ...existingConfig,
-          images: config,
-        };
+          images: integrationConfig,
+          ...(hasMiddleware
+            ? {
+                routes: [
+                  {
+                    src: '/(.*)',
+                    middlewarePath: '_middleware',
+                    continue: true,
+                  },
+                ],
+              }
+            : {}),
+        }
 
-        await fs.mkdir(directory, { recursive: true });
-        await fs.writeFile(configPath, JSON.stringify(newConfig, null, 2));
+        await fs.mkdir(directory, { recursive: true })
+        console.log({ hasMiddleware, middlewarePath })
+        if (hasMiddleware && middlewarePath) {
+          await fs.mkdir(
+            path.resolve(directory, './functions/_middleware.func'),
+            { recursive: true }
+          )
+          await fs.writeFile(
+            path.resolve(
+              directory,
+              './functions/_middleware.func/.vc-config.json'
+            ),
+            JSON.stringify(
+              {
+                runtime: 'edge',
+                entrypoint: 'index.js',
+              },
+              null,
+              2
+            )
+          )
+          await fs.copyFile(
+            middlewarePath,
+            path.resolve(directory, './functions/_middleware.func/index.js')
+          )
+        }
+        await fs.writeFile(configPath, JSON.stringify(newConfig, null, 2))
       },
     },
-  };
+  }
 }

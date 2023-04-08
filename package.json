@@ -1,5 +1,5 @@
 {
-  "name": "astro-vercel-image",
+  "name": "@jcblw/astro-site-integration",
   "description": "A way to leverage Vercel's Image Optimization API in Astro",
   "author": "Jacob Lowe",
   "license": "MIT",
