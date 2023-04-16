@@ -22,6 +22,7 @@ interface AstroVercelImagesConfig {
   dangerouslyAllowSVG?: boolean
   contentSecurityPolicy?: string
   middleware?: string
+  edgeFunction?: string
 }
 
 export const getVercelOutput = (root: URL) => new URL('./.vercel/output/', root)
@@ -29,6 +30,7 @@ export const getVercelOutput = (root: URL) => new URL('./.vercel/output/', root)
 export default function createIntegration(
   {
     middleware: middlewareFile,
+    edgeFunction: edgeFunctionFile,
     ...integrationConfig
   }: AstroVercelImagesConfig = {
     sizes: [640, 750, 828, 1080, 1200],
@@ -38,6 +40,8 @@ export default function createIntegration(
   const directory = path.join(process.cwd(), './.vercel/output')
   let hasMiddleware = false
   let middlewarePath: URL | null = null
+  let hasEdgeFunctions = false
+  let edgeFunctionsPath: URL | null = null
   return {
     name,
     hooks: {
@@ -50,11 +54,25 @@ export default function createIntegration(
           throw new Error('Typescript middleware is not supported')
         }
 
+        if (edgeFunctionFile && edgeFunctionFile.includes('.ts')) {
+          throw new Error('Typescript edge functions are not supported')
+        }
+
         if (middlewareFile) {
           middlewarePath = new URL(middlewareFile, config.srcDir)
           try {
             await fs.stat(middlewarePath)
             hasMiddleware = true
+          } catch (e) {
+            console.warn(e)
+          }
+        }
+
+        if (edgeFunctionFile) {
+          edgeFunctionsPath = new URL(edgeFunctionFile, config.srcDir)
+          try {
+            await fs.stat(edgeFunctionsPath)
+            hasEdgeFunctions = true
           } catch (e) {
             console.warn(e)
           }
@@ -98,7 +116,7 @@ export default function createIntegration(
         }
 
         await fs.mkdir(directory, { recursive: true })
-        console.log({ hasMiddleware, middlewarePath })
+
         if (hasMiddleware && middlewarePath) {
           await fs.mkdir(
             path.resolve(directory, './functions/_middleware.func'),
@@ -123,6 +141,28 @@ export default function createIntegration(
             path.resolve(directory, './functions/_middleware.func/index.js')
           )
         }
+
+        if (hasEdgeFunctions && edgeFunctionsPath) {
+          await fs.mkdir(path.resolve(directory, './functions/index.func'), {
+            recursive: true,
+          })
+          await fs.writeFile(
+            path.resolve(directory, './functions/index.func/.vc-config.json'),
+            JSON.stringify(
+              {
+                runtime: 'edge',
+                entrypoint: 'index.js',
+              },
+              null,
+              2
+            )
+          )
+          await fs.copyFile(
+            edgeFunctionsPath,
+            path.resolve(directory, './functions/index.func/index.js')
+          )
+        }
+
         await fs.writeFile(configPath, JSON.stringify(newConfig, null, 2))
       },
     },
