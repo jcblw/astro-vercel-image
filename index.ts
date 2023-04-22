@@ -22,7 +22,7 @@ interface AstroVercelImagesConfig {
   dangerouslyAllowSVG?: boolean
   contentSecurityPolicy?: string
   middleware?: string
-  edgeFunction?: string
+  edgeFunctions?: string[]
 }
 
 export const getVercelOutput = (root: URL) => new URL('./.vercel/output/', root)
@@ -30,7 +30,7 @@ export const getVercelOutput = (root: URL) => new URL('./.vercel/output/', root)
 export default function createIntegration(
   {
     middleware: middlewareFile,
-    edgeFunction: edgeFunctionFile,
+    edgeFunctions: edgeFunctionFiles,
     ...integrationConfig
   }: AstroVercelImagesConfig = {
     sizes: [640, 750, 828, 1080, 1200],
@@ -40,8 +40,12 @@ export default function createIntegration(
   const directory = path.join(process.cwd(), './.vercel/output')
   let hasMiddleware = false
   let middlewarePath: URL | null = null
-  let hasEdgeFunctions = false
-  let edgeFunctionsPath: URL | null = null
+  let edgeFunctions: {
+    output: URL
+    filePath: URL
+    outputFile: URL
+    configFile: URL
+  }[] = []
   return {
     name,
     hooks: {
@@ -54,7 +58,7 @@ export default function createIntegration(
           throw new Error('Typescript middleware is not supported')
         }
 
-        if (edgeFunctionFile && edgeFunctionFile.includes('.ts')) {
+        if (edgeFunctionFiles?.some((file) => file.includes('.ts'))) {
           throw new Error('Typescript edge functions are not supported')
         }
 
@@ -68,21 +72,34 @@ export default function createIntegration(
           }
         }
 
-        if (edgeFunctionFile) {
-          edgeFunctionsPath = new URL(edgeFunctionFile, config.srcDir)
-          try {
-            await fs.stat(edgeFunctionsPath)
-            hasEdgeFunctions = true
-          } catch (e) {
-            console.warn(e)
-          }
+        if (edgeFunctionFiles) {
+          edgeFunctionFiles.forEach((file) => {
+            const functionPath = `./functions/${file.replace('.js', '.func')}`
+            const edgeFunctionFile = new URL(file, config.srcDir)
+            const edgeFunctionOutput = new URL(
+              functionPath,
+              getVercelOutput(config.root)
+            )
+            const outputFile = new URL(
+              `${functionPath}/index.js`,
+              getVercelOutput(config.root)
+            )
+            const configFile = new URL(
+              `${functionPath}/.vc-config.json`,
+              getVercelOutput(config.root)
+            )
+            edgeFunctions.push({
+              filePath: edgeFunctionFile,
+              output: edgeFunctionOutput,
+              outputFile,
+              configFile,
+            })
+          })
         }
 
         const outDir = new URL('./static/', getVercelOutput(config.root))
         updateConfig({
-          // ...config,
           build: {
-            ...config.build,
             format: 'directory',
           },
           outDir,
@@ -142,24 +159,28 @@ export default function createIntegration(
           )
         }
 
-        if (hasEdgeFunctions && edgeFunctionsPath) {
-          await fs.mkdir(path.resolve(directory, './functions/index.func'), {
+        if (edgeFunctions.length) {
+          await fs.mkdir(path.resolve(directory, './functions'), {
             recursive: true,
           })
-          await fs.writeFile(
-            path.resolve(directory, './functions/index.func/.vc-config.json'),
-            JSON.stringify(
-              {
-                runtime: 'edge',
-                entrypoint: 'index.js',
-              },
-              null,
-              2
+          await Promise.all(
+            edgeFunctions.map(
+              async ({ filePath, output, configFile, outputFile }) => {
+                await fs.mkdir(output, { recursive: true })
+                await fs.writeFile(
+                  configFile,
+                  JSON.stringify(
+                    {
+                      runtime: 'edge',
+                      entrypoint: 'index.js',
+                    },
+                    null,
+                    2
+                  )
+                )
+                await fs.copyFile(filePath, outputFile)
+              }
             )
-          )
-          await fs.copyFile(
-            edgeFunctionsPath,
-            path.resolve(directory, './functions/index.func/index.js')
           )
         }
 
