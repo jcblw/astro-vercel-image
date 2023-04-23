@@ -171,8 +171,10 @@ export default function createIntegration(
                   configFile,
                   JSON.stringify(
                     {
-                      runtime: 'edge',
-                      entrypoint: 'index.js',
+                      runtime: 'nodejs16.x',
+                      handler: 'index.js',
+                      launcherType: 'Nodejs',
+                      shouldAddHelpers: true,
                     },
                     null,
                     2
