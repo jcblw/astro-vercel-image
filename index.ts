@@ -22,7 +22,7 @@ interface AstroVercelImagesConfig {
   dangerouslyAllowSVG?: boolean
   contentSecurityPolicy?: string
   middleware?: string
-  edgeFunctions?: string[]
+  serverlessFunctions?: string[]
 }
 
 export const getVercelOutput = (root: URL) => new URL('./.vercel/output/', root)
@@ -30,7 +30,7 @@ export const getVercelOutput = (root: URL) => new URL('./.vercel/output/', root)
 export default function createIntegration(
   {
     middleware: middlewareFile,
-    edgeFunctions: edgeFunctionFiles,
+    serverlessFunctions: serverlessFunctionsFiles,
     ...integrationConfig
   }: AstroVercelImagesConfig = {
     sizes: [640, 750, 828, 1080, 1200],
@@ -40,11 +40,12 @@ export default function createIntegration(
   const directory = path.join(process.cwd(), './.vercel/output')
   let hasMiddleware = false
   let middlewarePath: URL | null = null
-  let edgeFunctions: {
+  let serverlessFunctions: {
     output: URL
     filePath: URL
     outputFile: URL
     configFile: URL
+    extension: string
   }[] = []
   return {
     name,
@@ -58,7 +59,7 @@ export default function createIntegration(
           throw new Error('Typescript middleware is not supported')
         }
 
-        if (edgeFunctionFiles?.some((file) => file.includes('.ts'))) {
+        if (serverlessFunctionsFiles?.some((file) => file.includes('.ts'))) {
           throw new Error('Typescript edge functions are not supported')
         }
 
@@ -72,8 +73,9 @@ export default function createIntegration(
           }
         }
 
-        if (edgeFunctionFiles) {
-          edgeFunctionFiles.forEach((file) => {
+        if (serverlessFunctionsFiles) {
+          serverlessFunctionsFiles.forEach((file) => {
+            const extension = path.extname(file)
             const functionPath = `./functions/${file.replace('.js', '.func')}`
             const edgeFunctionFile = new URL(file, config.srcDir)
             const edgeFunctionOutput = new URL(
@@ -81,18 +83,19 @@ export default function createIntegration(
               getVercelOutput(config.root)
             )
             const outputFile = new URL(
-              `${functionPath}/index.js`,
+              `${functionPath}/index${extension.replace('.', '')}`,
               getVercelOutput(config.root)
             )
             const configFile = new URL(
               `${functionPath}/.vc-config.json`,
               getVercelOutput(config.root)
             )
-            edgeFunctions.push({
+            serverlessFunctions.push({
               filePath: edgeFunctionFile,
               output: edgeFunctionOutput,
               outputFile,
               configFile,
+              extension,
             })
           })
         }
@@ -147,7 +150,7 @@ export default function createIntegration(
             JSON.stringify(
               {
                 runtime: 'edge',
-                entrypoint: 'index.js',
+                entrypoint: `index.js`,
               },
               null,
               2
@@ -159,12 +162,12 @@ export default function createIntegration(
           )
         }
 
-        if (edgeFunctions.length) {
+        if (serverlessFunctions.length) {
           await fs.mkdir(path.resolve(directory, './functions'), {
             recursive: true,
           })
           await Promise.all(
-            edgeFunctions.map(
+            serverlessFunctions.map(
               async ({ filePath, output, configFile, outputFile }) => {
                 await fs.mkdir(output, { recursive: true })
                 await fs.writeFile(
