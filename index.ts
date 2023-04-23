@@ -76,14 +76,17 @@ export default function createIntegration(
         if (serverlessFunctionsFiles) {
           serverlessFunctionsFiles.forEach((file) => {
             const extension = path.extname(file)
-            const functionPath = `./functions/${file.replace('.js', '.func')}`
+            const functionPath = `./functions/${file.replace(
+              /\.js|\.mjs/,
+              '.func'
+            )}`
             const edgeFunctionFile = new URL(file, config.srcDir)
             const edgeFunctionOutput = new URL(
               functionPath,
               getVercelOutput(config.root)
             )
             const outputFile = new URL(
-              `${functionPath}/index${extension.replace('.', '')}`,
+              `${functionPath}/index${extension}`,
               getVercelOutput(config.root)
             )
             const configFile = new URL(
@@ -168,14 +171,20 @@ export default function createIntegration(
           })
           await Promise.all(
             serverlessFunctions.map(
-              async ({ filePath, output, configFile, outputFile }) => {
+              async ({
+                filePath,
+                output,
+                configFile,
+                outputFile,
+                extension,
+              }) => {
                 await fs.mkdir(output, { recursive: true })
                 await fs.writeFile(
                   configFile,
                   JSON.stringify(
                     {
                       runtime: 'nodejs16.x',
-                      handler: 'index.js',
+                      handler: `index${extension}`,
                       launcherType: 'Nodejs',
                       shouldAddHelpers: true,
                     },
