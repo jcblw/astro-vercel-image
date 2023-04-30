@@ -2,6 +2,7 @@ import type { AstroIntegration } from 'astro'
 import esbuild from 'esbuild'
 import fs from 'fs/promises'
 import path from 'path'
+import { wasmPlugin } from './wasm-plugin'
 
 const name = '@jcblw/astro-site-presets'
 
@@ -23,34 +24,37 @@ interface AstroVercelImagesConfig {
   contentSecurityPolicy?: string
   middleware?: string
   serverlessFunctions?: string[]
+  edgeFunctions?: string[]
 }
 
-let wasmPlugin = {
-  name: 'wasm',
-  setup(build: esbuild.PluginBuild) {
-    // Resolve ".wasm" files to a path with a namespace
-    // filter match yoga.wasm?module or hi.wasm
-    build.onResolve({ filter: /\.wasm(\?module)?$/i }, (args) => {
-      if (args.resolveDir === '') {
-        return // Ignore unresolvable paths
-      }
-      return {
-        path: (path.isAbsolute(args.path)
-          ? args.path
-          : path.join(args.resolveDir, args.path)
-        ).replace(/\?module$/, ''),
-        namespace: 'wasm-binary',
-      }
-    })
+type FunctionConfig = {
+  output: URL
+  filePath: URL
+  outputFile: URL
+  configFile: URL
+  extension: string
+}
 
-    // Virtual modules in the "wasm-binary" namespace contain the
-    // actual bytes of the WebAssembly file. This uses esbuild's
-    // built-in "binary" loader instead of manually embedding the
-    // binary data inside JavaScript code ourselves.
-    build.onLoad({ filter: /.*/, namespace: 'wasm-binary' }, async (args) => ({
-      contents: await fs.readFile(args.path),
-      loader: 'binary',
-    }))
+enum FunctionType {
+  Edge = 'edge',
+  Serverless = 'serverless',
+}
+
+const RuntimeConfigs: Record<
+  FunctionType,
+  {
+    runtime: 'nodejs16.x' | 'edge' // TODO: support more runtimes
+    launcherType?: string
+    shouldAddHelpers?: boolean
+  }
+> = {
+  [FunctionType.Edge]: {
+    runtime: 'edge',
+  },
+  [FunctionType.Serverless]: {
+    runtime: 'nodejs16.x',
+    launcherType: 'Nodejs',
+    shouldAddHelpers: true,
   },
 }
 
@@ -58,10 +62,73 @@ export const toAbsPath = (url: URL) => url.toString().replace('file://', '')
 
 export const getVercelOutput = (root: URL) => new URL('./.vercel/output/', root)
 
+export const pushFunctionFiles =
+  (files: FunctionConfig[], config: any) => (file: string) => {
+    const extension = path.extname(file)
+    const functionPath = `./functions/${file.replace(/\.js|\.mjs/, '.func')}`
+    const edgeFunctionFile = new URL(file, config.srcDir)
+    const edgeFunctionOutput = new URL(
+      functionPath,
+      getVercelOutput(config.root)
+    )
+    const outputFile = new URL(
+      `${functionPath}/index${extension}`,
+      getVercelOutput(config.root)
+    )
+    const configFile = new URL(
+      `${functionPath}/.vc-config.json`,
+      getVercelOutput(config.root)
+    )
+    files.push({
+      filePath: edgeFunctionFile,
+      output: edgeFunctionOutput,
+      outputFile,
+      configFile,
+      extension,
+    })
+  }
+
+const createVercelFunctions = async (
+  { directory, type }: { directory: string; type: FunctionType },
+  fns: FunctionConfig[]
+) => {
+  await fs.mkdir(path.resolve(directory, './functions'), {
+    recursive: true,
+  })
+  await Promise.all(
+    fns.map(async ({ filePath, output, configFile, outputFile, extension }) => {
+      await fs.mkdir(output, { recursive: true })
+      await fs.writeFile(
+        configFile,
+        JSON.stringify(
+          {
+            ...(RuntimeConfigs[type] || RuntimeConfigs[FunctionType.Edge]),
+            handler: `index${extension}`,
+          },
+          null,
+          2
+        )
+      )
+      await esbuild.build({
+        target: 'es2020',
+        platform: 'browser',
+        entryPoints: [toAbsPath(filePath)],
+        outfile: toAbsPath(outputFile),
+        allowOverwrite: true,
+        format: 'esm',
+        bundle: true,
+        minify: false,
+        plugins: [wasmPlugin],
+      })
+    })
+  )
+}
+
 export default function createIntegration(
   {
     middleware: middlewareFile,
     serverlessFunctions: serverlessFunctionsFiles,
+    edgeFunctions: edgeFunctionsFiles,
     ...integrationConfig
   }: AstroVercelImagesConfig = {
     sizes: [640, 750, 828, 1080, 1200],
@@ -71,13 +138,8 @@ export default function createIntegration(
   const directory = path.join(process.cwd(), './.vercel/output')
   let hasMiddleware = false
   let middlewarePath: URL | null = null
-  let serverlessFunctions: {
-    output: URL
-    filePath: URL
-    outputFile: URL
-    configFile: URL
-    extension: string
-  }[] = []
+  let serverlessFunctions: FunctionConfig[] = []
+  let edgeFunctions: FunctionConfig[] = []
   return {
     name,
     hooks: {
@@ -105,33 +167,13 @@ export default function createIntegration(
         }
 
         if (serverlessFunctionsFiles) {
-          serverlessFunctionsFiles.forEach((file) => {
-            const extension = path.extname(file)
-            const functionPath = `./functions/${file.replace(
-              /\.js|\.mjs/,
-              '.func'
-            )}`
-            const edgeFunctionFile = new URL(file, config.srcDir)
-            const edgeFunctionOutput = new URL(
-              functionPath,
-              getVercelOutput(config.root)
-            )
-            const outputFile = new URL(
-              `${functionPath}/index${extension}`,
-              getVercelOutput(config.root)
-            )
-            const configFile = new URL(
-              `${functionPath}/.vc-config.json`,
-              getVercelOutput(config.root)
-            )
-            serverlessFunctions.push({
-              filePath: edgeFunctionFile,
-              output: edgeFunctionOutput,
-              outputFile,
-              configFile,
-              extension,
-            })
-          })
+          serverlessFunctionsFiles.forEach(
+            pushFunctionFiles(serverlessFunctions, config)
+          )
+        }
+
+        if (edgeFunctionsFiles) {
+          edgeFunctionsFiles.forEach(pushFunctionFiles(edgeFunctions, config))
         }
 
         const outDir = new URL('./static/', getVercelOutput(config.root))
@@ -197,46 +239,16 @@ export default function createIntegration(
         }
 
         if (serverlessFunctions.length) {
-          await fs.mkdir(path.resolve(directory, './functions'), {
-            recursive: true,
-          })
-          await Promise.all(
-            serverlessFunctions.map(
-              async ({
-                filePath,
-                output,
-                configFile,
-                outputFile,
-                extension,
-              }) => {
-                await fs.mkdir(output, { recursive: true })
-                await fs.writeFile(
-                  configFile,
-                  JSON.stringify(
-                    {
-                      runtime: 'nodejs16.x',
-                      handler: `index${extension}`,
-                      launcherType: 'Nodejs',
-                      shouldAddHelpers: true,
-                    },
-                    null,
-                    2
-                  )
-                )
-                await esbuild.build({
-                  target: 'es2020',
-                  platform: 'browser',
-                  entryPoints: [toAbsPath(filePath)],
-                  outfile: toAbsPath(outputFile),
-                  allowOverwrite: true,
-                  format: 'esm',
-                  bundle: true,
-                  minify: false,
-                  plugins: [wasmPlugin],
-                })
-                // await fs.copyFile(filePath, outputFile)
-              }
-            )
+          await createVercelFunctions(
+            { directory, type: FunctionType.Serverless },
+            serverlessFunctions
+          )
+        }
+
+        if (edgeFunctions.length) {
+          await createVercelFunctions(
+            { directory, type: FunctionType.Edge },
+            edgeFunctions
           )
         }
 

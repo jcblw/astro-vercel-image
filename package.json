@@ -8,7 +8,7 @@
     "url": "git@github.com:jcblw/astro-vercel-image.git"
   },
   "homepage": "https://github.com/jcblw/astro-vercel-image",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "type": "module",
   "exports": {
     ".": "./index.ts",
