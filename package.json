@@ -12,7 +12,8 @@
   "type": "module",
   "exports": {
     ".": "./index.ts",
-    "./VercelImage.astro": "./VercelImage.astro"
+    "./VercelImage.astro": "./VercelImage.astro",
+    "./wasm-plugin": "./wasm-plugin.ts"
   },
   "files": [
     "src",
@@ -36,8 +37,5 @@
   },
   "peerDependencies": {
     "astro": "^2.0.0-beta.0"
-  },
-  "dependencies": {
-    "esbuild-plugin-wasm": "^1.0.0"
   }
 }
